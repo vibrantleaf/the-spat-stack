@@ -1,0 +1,214 @@
+version: '3'
+
+services:
+  spat-traefik-app:
+    image: traefik:alpine
+    container_name: spat-traefik
+    restart: always
+    env_file: .env
+    ports:
+      - 80:80/tcp
+      - 443:443/tcp
+      - 8080:8080/tcp
+    volumes:
+      - '/etc/localtime:/etc/localtime:ro'
+      - '/var/run/docker.sock:/var/run/docker.sock:ro'
+      - '${CONFIG_PATH}/traefik/app/letsencrypt:/letsencrypt:rw'
+      - '/var/log/crowdsec/:/var/log/crowdsec/'
+    command: 
+      - --api.insecure=true
+      - --providers.docker
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.forwardedHeaders.trustedIPs=172.26.0.0/16,172.80.0.0/24
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.websecure.forwardedHeaders.trustedIPs=172.26.0.0/16,172.80.0.0/24
+      - --entrypoints.websecure.http.tls.domains[0].main=${DOMAIN}
+      - --entrypoints.websecure.http.tls.domains[0].sans=*.${DOMAIN}
+      - --entrypoints.websecure.http.tls.certresolver=myresolver
+      - --certificatesresolvers.myresolver.acme.dnschallenge=true
+      - --certificatesresolvers.myresolver.acme.dnschallenge.provider=${DNS_CHALLENGE_PROVIDER}
+      - --certificatesresolvers.myresolver.acme.email=${MAIL_ADR}
+      - --certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json
+    labels:
+      traefik.enable: true
+      traefik.http.routers.traefik.rule: Host(`${APP_URL}`)
+      traefik.http.services.traefik.loadbalancer.server.port: 8080
+      traefik.http.routers.authentik.rule: Host(`auth.domain.com`) || HostRegexp(`{subdomain:[a-z0-9]+}.domain.com`) && PathPrefix(`/outpost.goauthentik.io/`)
+    depends_on:
+      - spat-crowdsec
+      - spat-crowdsec-traefik-bouncer
+
+  spat-crowdsec:
+    image: docker.io/crowdsecurity/crowdsec:latest
+    restart: always
+    container_name: spat-crowdsec
+    env_file: .env
+    expose:
+      - 808
+    environment:
+      PGID: "1000"
+      COLLECTIONS: "crowdsecurity/traefik crowdsecurity/http-cve"
+    volumes:
+      - '/etc/localtime:/etc/localtime:ro'
+      - ${CONFIG_PATH}/spat-crowdsec/data:/var/lib/crowdsec/data:rw
+      - ${CONFIG_PATH}/spat-crowdsec:/etc/crowdsec:rw
+      - '/var/log/auth.log:/var/log/auth.log:ro'
+      - '/var/log/spat-crowdsec:/var/log/crowdsec:ro'
+    restart: unless-stopped
+
+  spat-crowdsec-traefik-bouncer:
+    image: docker.io/fbonalair/traefik-crowdsec-bouncer:latest
+    container_name: spat-bouncer-traefik
+    env_file: .env
+    environment:
+      CROWDSEC_BOUNCER_API_KEY_FILE: /run/secrets/spat_crowdsec_bouncer_api_key
+      CROWDSEC_AGENT_HOST: spat-crowdsec:808
+      GIN_MODE: release
+    secrets:
+     - crowdsec_bouncer_api_key
+    volumes:
+      - '/etc/localtime:/etc/localtime:ro'
+    depends_on:
+      - spat-crowdsec
+    restart: unless-stopped
+
+  spat-postgresql:
+    image: postgres:12-alpine
+    restart: unless-stopped
+    container_name: spat-postgres
+    env_file: .env
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+      start_period: 20s
+      interval: 30s
+      retries: 5
+      timeout: 5s
+    volumes:
+      - '/etc/localtime:/etc/localtime:ro'
+      - spat-database:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER_FILE: /run/secrets/spat-postgress-user
+      POSTGRES_DB: spat-authentik
+      POSTGRES_PASSWORD_FILE: /run/secrets/spat-postgress-password
+    secrets:
+      - spat-postgress-user
+      - spat-postgress-password
+    env_file: .env
+    networks:
+      - proxy
+
+  spat-redis:
+    image: redis:alpine
+    restart: unless-stopped
+    container_name: spat-redis
+    env_file: .env
+    volumes:
+      - '/etc/localtime:/etc/localtime:ro'
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
+      start_period: 20s
+      interval: 30s
+      retries: 5
+      timeout: 3s
+    networks:
+      - proxy
+
+  spat-authentik-server:
+    image: ghcr.io/goauthentik/server:2022.7.2
+    restart: unless-stopped
+    container_name: authentik-server
+    env_file: .env
+    command: server
+    environment:
+      AUTHENTIK_REDIS__HOST: spat-redis
+      AUTHENTIK_POSTGRESQL__HOST: authentik-postgres
+      AUTHENTIK_POSTGRESQL__USER_FILE: /run/secrets/spat-postgress-user
+      AUTHENTIK_POSTGRESQL__NAME: spat-authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD_FILE: /run/secrets/spat-postgress-password
+    secrets:
+      - spat-postgress-user
+      - spat-postgress-password
+    volumes:
+      - '/etc/localtime:/etc/localtime:ro'
+      - ./media:/media
+      - ./custom-templates:/templates
+      - geoip:/geoip
+    env_file:
+      - .env
+    ports:
+      - "0.0.0.0:${AUTHENTIK_PORT_HTTP:-9000}:9000"
+      - "0.0.0.0:${AUTHENTIK_PORT_HTTPS:-9443}:9443"
+    networks:
+      - proxy
+    depends_on:
+      - spat-authentik-worker
+      - spat-authentik-geoipupdate
+      - spat-redis
+      - spat-postgresql
+    labels:
+      traefik.enable: true
+      traefik.http.routers.authentik.entryPoints: https
+      traefik.http.routers.authentik.rule: Host(`auth.domain.com`) || HostRegexp(`{subdomain:[a-z0-9]+}.domain.com`) && PathPrefix(`/outpost.goauthentik.io/`)
+
+  spat-authentik-worker:
+    image: ghcr.io/goauthentik/server:2022.7.2
+    restart: unless-stopped
+    container_name: authentik-worker
+    env_file: .env
+    command: worker
+    environment:
+      AUTHENTIK_REDIS__HOST: spat-redis
+      AUTHENTIK_POSTGRESQL__HOST: authentik-postgres
+      AUTHENTIK_POSTGRESQL__USER_FILE: /run/secrets/spat-postgress-user
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD_FILE: /run/secrets/spat-postgress-password
+    secrets:
+      - spat-postgress-user
+      - spat-postgress-password
+    user: root
+    volumes:
+      - '/etc/localtime:/etc/localtime:ro'
+      - .'/media:/media'
+      - './certs:/certs'
+      - '/var/run/docker.sock:/var/run/docker.sock'
+      - './custom-templates:/templates'
+      - spat-geoip:/geoip
+    env_file:
+      - .env
+    networks:
+      - proxy
+
+  spat-authentik-geoipupdate:
+    image: "docker.io/maxmindinc/geoipupdate:latest"
+    container_name: authentik-geoip
+    env_file: .env
+    volumes:
+      - '/etc/localtime:/etc/localtime:ro'
+      - "spat-geoip:/usr/share/GeoIP"
+    environment:
+      GEOIPUPDATE_EDITION_IDS: "GeoLite2-City"
+      GEOIPUPDATE_FREQUENCY: "8"
+    env_file: .env
+    networks:
+      - proxy
+
+secrets: 
+  spat-postgress-user:
+    external: true
+  spat-postgress-password:
+    external: true
+  spat-Crowdsec-bouncer-api-key:
+    external: true
+
+volumes:
+  spat-database:
+    driver: local
+  spat-geoip:
+    driver: local
+
+networks:
+  default:
+    external: true
+    name: proxy

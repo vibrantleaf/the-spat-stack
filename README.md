@@ -1,2 +1,2 @@
-# spat
-A Secured (reverse-)Proxy with Auth
+# The SPAT Stack
+A Secured (reverse-)Proxy with Auth & Traefik
