@@ -1,0 +1,510 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    kompose.cmd: kompose convert -f docker-compose.yml --service-group-mode label --service-group-name spat-stack --verbose
+    kompose.service.group: spat-stack
+    kompose.version: 1.27.0 (b0ed6a2c9)
+  creationTimestamp: null
+  labels:
+    io.kompose.service: spat-stack
+  name: spat-stack
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      io.kompose.service: spat-stack
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        kompose.cmd: kompose convert -f docker-compose.yml --service-group-mode label --service-group-name spat-stack --verbose
+        kompose.service.group: spat-stack
+        kompose.version: 1.27.0 (b0ed6a2c9)
+      creationTimestamp: null
+      labels:
+        io.kompose.service: spat-stack
+    spec:
+      serviceAccountName: spat-account
+      containers:
+        - name: spat-croudsec-bouncer-traefik
+          image: docker.io/fbonalair/traefik-crowdsec-bouncer:latest
+          env:
+            - name: CROWDSEC_AGENT_HOST
+              value: spat-crowdsec:808
+            - name: DNS_CHALLENGE_PROVIDER
+              valueFrom:
+                configMapKeyRef:
+                  key: DNS_CHALLENGE_PROVIDER
+                  name: env
+            - name: DOMAIN
+              valueFrom:
+                configMapKeyRef:
+                  key: DOMAIN
+                  name: env
+            - name: GIN_MODE
+              value: release
+            - name: MAIL_ADR
+              valueFrom:
+                configMapKeyRef:
+                  key: MAIL_ADR
+                  name: env
+          restartPolicy: Always
+          resources: {}
+          volumeMounts:
+            - mountPath: /etc/localtime
+              name: spat-stack-claim0
+              readOnly: true
+            - mountPath: /var/lib/postgresql/data
+              name: spat-database
+            - mountPath: /media
+              name: spat-stack-claim1
+            - mountPath: /templates
+              name: spat-stack-claim2
+            - mountPath: /geoip
+              name: geoip
+            - mountPath: /media'
+              name: spat-stack-claim1
+            - mountPath: /certs
+              name: spat-stack-claim2
+            - mountPath: /var/run/docker.sock
+              name: spat-stack-claim3
+            - mountPath: /usr/share/GeoIP
+              name: spat-geoip
+            - mountPath: /letsencrypt
+              name: spat-stack-claim2
+            - mountPath: /var/log/crowdsec/
+              name: spat-stack-claim3
+            - mountPath: /var/lib/crowdsec/data
+              name: spat-stack-claim1
+            - mountPath: /etc/crowdsec
+              name: spat-stack-claim2
+            - mountPath: /var/log/auth.log
+              name: spat-stack-claim3
+              readOnly: true
+            - mountPath: /var/log/crowdsec
+              name: spat-stack-claim4
+              readOnly: true
+        - name: spat-postgres
+          image: postgres:12-alpine
+          env:
+            - name: DNS_CHALLENGE_PROVIDER
+              valueFrom:
+                configMapKeyRef:
+                  key: DNS_CHALLENGE_PROVIDER
+                  name: env
+            - name: DOMAIN
+              valueFrom:
+                configMapKeyRef:
+                  key: DOMAIN
+                  name: env
+            - name: MAIL_ADR
+              valueFrom:
+                configMapKeyRef:
+                  key: MAIL_ADR
+                  name: env
+            - name: POSTGRES_DB
+              value: spat-authentik
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready -d ${POSTGRES_DB} -U ${POSTGRES_USER}
+            failureThreshold: 5
+            periodSeconds: 30
+            timeoutSeconds: 5
+          restartPolicy: Always
+          resources: {}
+          volumeMounts:
+            - mountPath: /etc/localtime
+              name: spat-stack-claim0
+              readOnly: true
+            - mountPath: /var/lib/postgresql/data
+              name: spat-database
+            - mountPath: /media
+              name: spat-stack-claim1
+            - mountPath: /templates
+              name: spat-stack-claim2
+            - mountPath: /geoip
+              name: geoip
+            - mountPath: /media'
+              name: spat-stack-claim1
+            - mountPath: /certs
+              name: spat-stack-claim2
+            - mountPath: /var/run/docker.sock
+              name: spat-stack-claim3
+            - mountPath: /usr/share/GeoIP
+              name: spat-geoip
+            - mountPath: /var/log/crowdsec/
+              name: spat-stack-claim3
+            - mountPath: /letsencrypt
+              name: spat-stack-claim2
+            - mountPath: /var/log/crowdsec
+              name: spat-stack-claim4
+              readOnly: true
+            - mountPath: /var/lib/crowdsec/data
+              name: spat-stack-claim1
+            - mountPath: /etc/crowdsec
+              name: spat-stack-claim2
+            - mountPath: /var/log/auth.log
+              name: spat-stack-claim3
+              readOnly: true
+        - name: spat-redis
+          image: redis:alpine
+          env:
+            - name: DNS_CHALLENGE_PROVIDER
+              valueFrom:
+                configMapKeyRef:
+                  key: DNS_CHALLENGE_PROVIDER
+                  name: env
+            - name: DOMAIN
+              valueFrom:
+                configMapKeyRef:
+                  key: DOMAIN
+                  name: env
+            - name: MAIL_ADR
+              valueFrom:
+                configMapKeyRef:
+                  key: MAIL_ADR
+                  name: env
+          livenessProbe:
+            exec:
+              command:
+                - redis-cli ping | grep PONG
+            failureThreshold: 5
+            periodSeconds: 30
+            timeoutSeconds: 3
+          restartPolicy: Always    
+          resources: {}
+          volumeMounts:
+            - mountPath: /etc/localtime
+              name: spat-stack-claim0
+              readOnly: true
+            - mountPath: /media
+              name: spat-stack-claim1
+            - mountPath: /templates
+              name: spat-stack-claim2
+            - mountPath: /geoip
+              name: geoip
+            - mountPath: /media'
+              name: spat-stack-claim1
+            - mountPath: /certs
+              name: spat-stack-claim2
+            - mountPath: /var/run/docker.sock
+              name: spat-stack-claim3
+            - mountPath: /usr/share/GeoIP
+              name: spat-geoip
+            - mountPath: /letsencrypt
+              name: spat-stack-claim2
+            - mountPath: /var/log/crowdsec/
+              name: spat-stack-claim3
+            - mountPath: /var/lib/crowdsec/data
+              name: spat-stack-claim1
+            - mountPath: /etc/crowdsec
+              name: spat-stack-claim2
+            - mountPath: /var/log/auth.log
+              name: spat-stack-claim3
+              readOnly: true
+            - mountPath: /var/log/crowdsec
+              name: spat-stack-claim4
+              readOnly: true
+        - name: spat-authentik-server
+          image: ghcr.io/goauthentik/server:2022.7.2
+          args:
+            - server
+          env:
+            - name: AUTHENTIK_POSTGRESQL__HOST
+              value: authentik-postgres
+            - name: AUTHENTIK_POSTGRESQL__NAME
+              value: spat-authentik
+            - name: AUTHENTIK_REDIS__HOST
+              value: spat-redis
+            - name: DNS_CHALLENGE_PROVIDER
+              valueFrom:
+                configMapKeyRef:
+                  key: DNS_CHALLENGE_PROVIDER
+                  name: env
+            - name: DOMAIN
+              valueFrom:
+                configMapKeyRef:
+                  key: DOMAIN
+                  name: env
+            - name: MAIL_ADR
+              valueFrom:
+                configMapKeyRef:
+                  key: MAIL_ADR
+                  name: env
+          ports:
+            - name: authentik-http
+              containerPort: 9000
+            - name: authentik-https 
+              containerPort: 9443
+          restartPolicy: Always
+          resources: {}
+          volumeMounts:
+            - mountPath: /geoip
+              name: geoip
+            - mountPath: /etc/localtime
+              name: spat-stack-claim0
+              readOnly: true
+            - mountPath: /media
+              name: spat-stack-claim1
+            - mountPath: /templates
+              name: spat-stack-claim2
+            - mountPath: /media'
+              name: spat-stack-claim1
+            - mountPath: /certs
+              name: spat-stack-claim2
+            - mountPath: /var/run/docker.sock
+              name: spat-stack-claim3
+            - mountPath: /usr/share/GeoIP
+              name: spat-geoip
+            - mountPath: /var/log/crowdsec/
+              name: spat-stack-claim3
+            - mountPath: /letsencrypt
+              name: spat-stack-claim2
+            - mountPath: /var/lib/crowdsec/data
+              name: spat-stack-claim1
+            - mountPath: /etc/crowdsec
+              name: spat-stack-claim2
+            - mountPath: /var/log/auth.log
+              name: spat-stack-claim3
+              readOnly: true
+            - mountPath: /var/log/crowdsec
+              name: spat-stack-claim4
+              readOnly: true
+        - name: spat-authentik-worker
+          image: ghcr.io/goauthentik/server:2022.7.2
+          args:
+            - worker
+          env:
+            - name: AUTHENTIK_POSTGRESQL__HOST
+              value: authentik-postgres
+            - name: AUTHENTIK_POSTGRESQL__NAME
+              value: authentik
+            - name: AUTHENTIK_REDIS__HOST
+              value: spat-redis
+            - name: DNS_CHALLENGE_PROVIDER
+              valueFrom:
+                configMapKeyRef:
+                  key: DNS_CHALLENGE_PROVIDER
+                  name: env
+            - name: DOMAIN
+              valueFrom:
+                configMapKeyRef:
+                  key: DOMAIN
+                  name: env
+            - name: MAIL_ADR
+              valueFrom:
+                configMapKeyRef:
+                  key: MAIL_ADR
+                  name: env
+          restartPolicy: Always
+          resources: {}
+          volumeMounts:
+            - mountPath: /certs
+              name: spat-stack-claim2
+            - mountPath: /var/run/docker.sock
+              name: spat-stack-claim3
+            - mountPath: /templates
+              name: spat-stack-claim4
+            - mountPath: /geoip
+              name: spat-geoip
+            - mountPath: /etc/localtime
+              name: spat-stack-claim0
+              readOnly: true
+            - mountPath: /media'
+              name: spat-stack-claim1
+            - mountPath: /usr/share/GeoIP
+              name: spat-geoip
+            - mountPath: /letsencrypt
+              name: spat-stack-claim2
+            - mountPath: /var/log/crowdsec/
+              name: spat-stack-claim3
+            - mountPath: /var/log/auth.log
+              name: spat-stack-claim3
+              readOnly: true
+            - mountPath: /var/log/crowdsec
+              name: spat-stack-claim4
+              readOnly: true
+            - mountPath: /var/lib/crowdsec/data
+              name: spat-stack-claim1
+            - mountPath: /etc/crowdsec
+              name: spat-stack-claim    
+        - name: spat-authentik-geoip
+          image: docker.io/maxmindinc/geoipupdate:latest
+          env:
+            - name: DNS_CHALLENGE_PROVIDER
+              valueFrom:
+                configMapKeyRef:
+                  key: DNS_CHALLENGE_PROVIDER
+                  name: env
+            - name: DOMAIN
+              valueFrom:
+                configMapKeyRef:
+                  key: DOMAIN
+                  name: env
+            - name: GEOIPUPDATE_EDITION_IDS
+              value: GeoLite2-City
+            - name: GEOIPUPDATE_FREQUENCY
+              value: "8"
+            - name: MAIL_ADR
+              valueFrom:
+                configMapKeyRef:
+                  key: MAIL_ADR
+                  name: env
+          restartPolicy: Always
+          resources: {}
+          volumeMounts:
+            - mountPath: /etc/localtime
+              name: spat-stack-claim0
+              readOnly: true
+            - mountPath: /usr/share/GeoIP
+              name: spat-geoip
+            - mountPath: /var/log/crowdsec/
+              name: spat-stack-claim3
+            - mountPath: /var/log/crowdsec
+              name: spat-stack-claim4
+              readOnly: true
+            - mountPath: /var/lib/crowdsec/data
+              name: spat-stack-claim1
+            - mountPath: /etc/crowdsec
+              name: spat-stack-claim2
+            - mountPath: /var/log/auth.log
+              name: spat-stack-claim3
+              readOnly: true
+        - name: spat-traefik-app
+          image: traefik:alpine
+          args:
+            - --api.insecure
+            - --providers.kubernetesingress
+            - --providers.--providers.kubernetesingress.exposedbydefault=false
+            - --providers.docker
+            - --providers.docker.exposedbydefault=false
+            - --entrypoints.web.address=:80
+            - --entrypoints.web.http.redirections.entrypoint.to=websecure
+            - --entrypoints.web.forwardedHeaders.trustedIPs=172.26.0.0/16,172.80.0.0/24
+            - --entrypoints.websecure.address=:443
+            - --entrypoints.websecure.forwardedHeaders.trustedIPs=172.26.0.0/16,172.80.0.0/24
+            - --entrypoints.websecure.http.tls.domains[0].main=
+            - --entrypoints.websecure.http.tls.domains[0].sans=*.
+            - --entrypoints.websecure.http.tls.certresolver=myresolver
+            - --certificatesresolvers.myresolver.acme.dnschallenge=true
+            - --certificatesresolvers.myresolver.acme.dnschallenge.provider=
+            - --certificatesresolvers.myresolver.acme.email=
+            - --certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json
+          env:
+            - name: DNS_CHALLENGE_PROVIDER
+              valueFrom:
+                configMapKeyRef:
+                  key: DNS_CHALLENGE_PROVIDER
+                  name: env
+            - name: DOMAIN
+              valueFrom:
+                configMapKeyRef:
+                  key: DOMAIN
+                  name: env
+            - name: MAIL_ADR
+              valueFrom:
+                configMapKeyRef:
+                  key: MAIL_ADR
+                  name: env
+          ports:
+            - name: web
+              containerPort: 80
+            - name: https
+              containerPort: 443
+            - name: traefik-dashboard
+              containerPort: 8080
+          restartPolicy: Always
+          resources: {}
+          volumeMounts:
+            - mountPath: /var/log/crowdsec/
+              name: spat-stack-claim3
+            - mountPath: /etc/localtime
+              name: spat-stack-claim0
+              readOnly: true
+            - mountPath: /var/run/docker.sock
+              name: spat-stack-claim1
+              readOnly: true
+            - mountPath: /letsencrypt
+              name: spat-stack-claim2
+            - mountPath: /var/lib/crowdsec/data
+              name: spat-stack-claim1
+            - mountPath: /etc/crowdsec
+              name: spat-stack-claim2
+            - mountPath: /var/log/auth.log
+              name: spat-stack-claim3
+              readOnly: true
+            - mountPath: /var/log/crowdsec
+              name: spat-stack-claim4
+              readOnly: true
+
+        - name: spat-crowdsec
+          image: docker.io/crowdsecurity/crowdsec:latest
+          env:
+            - name: COLLECTIONS
+              value: crowdsecurity/traefik crowdsecurity/http-cve
+            - name: DNS_CHALLENGE_PROVIDER
+              valueFrom:
+                configMapKeyRef:
+                  key: DNS_CHALLENGE_PROVIDER
+                  name: env
+            - name: DOMAIN
+              valueFrom:
+                configMapKeyRef:
+                  key: DOMAIN
+                  name: env
+            - name: MAIL_ADR
+              valueFrom:
+                configMapKeyRef:
+                  key: MAIL_ADR
+                  name: env
+            - name: PGID
+              value: "1000"
+          ports:
+            - name: crowdsec
+              containerPort: 808
+          resources: {}
+          volumeMounts:
+            - mountPath: /etc/crowdsec
+              name: spat-stack-claim2
+            - mountPath: /var/log/auth.log
+              name: spat-stack-claim3
+              readOnly: true
+            - mountPath: /var/log/crowdsec
+              name: spat-stack-claim4
+              readOnly: true
+            - mountPath: /etc/localtime
+              name: spat-stack-claim0
+              readOnly: true
+            - mountPath: /var/lib/crowdsec/data
+              name: spat-stack-claim1
+      restartPolicy: Always
+      volumes:
+        - name: spat-stack-claim0
+          persistentVolumeClaim:
+            claimName: spat-stack-claim0
+            readOnly: true
+        - name: spat-database
+          persistentVolumeClaim:
+            claimName: spat-database
+        - name: spat-stack-claim1
+          persistentVolumeClaim:
+            claimName: spat-stack-claim1
+        - name: spat-stack-claim2
+          persistentVolumeClaim:
+            claimName: spat-stack-claim2
+        - name: geoip
+          persistentVolumeClaim:
+            claimName: geoip
+        - name: spat-stack-claim3
+          persistentVolumeClaim:
+            claimName: spat-stack-claim3
+        - name: spat-stack-claim4
+          persistentVolumeClaim:
+            claimName: spat-stack-claim4
+        - name: spat-geoip
+          persistentVolumeClaim:
+            claimName: spat-geoip
+status: {}
