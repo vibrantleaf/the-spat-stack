@@ -1,0 +1,7 @@
+accessLog:
+  filePath: "/var/log/crowdsec/traefik.log"
+  bufferingSize: 50
+
+middlewares:
+  - securityHeaders@file
+  - crowdsec-bouncer@file
